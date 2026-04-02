@@ -43,8 +43,9 @@ class QueryAnnotator:
         self.visualise_btn.pack(side=tk.LEFT)
 
         ttk.Label(left_frame, text="Annotated Query Output:", font=("Helvetica", 14, "bold")).pack(anchor=tk.W, pady=(10, 5))
-        self.annotation_output = tk.Text(left_frame, height=12, wrap=tk.WORD, state=tk.DISABLED, font=("Helvetica", 12))
-        self.annotation_output.pack(fill=tk.BOTH, expand=True)
+        self.annotation_canvas = tk.Canvas(left_frame, bg="white", relief=tk.SUNKEN, borderwidth=1)
+        self.annotation_canvas.pack(fill=tk.BOTH, expand=True)
+        self.annotation_canvas.create_text(20, 20, text="Run the algorithm to see visual annotations here.", fill="gray", font=("Helvetica", 12, "italic"), anchor=tk.W)
 
         right_frame = ttk.Frame(main_paned_window)
         main_paned_window.add(right_frame, weight=1)
@@ -65,10 +66,7 @@ class QueryAnnotator:
             return
         
         dummy_result = f"-- Schema used: {schema}\n--Annotations mapped to query components...\n\n{query_text}\n\n/* -> Tables are read using sequential scan because ... */"
-        self.annotation_output.config(state=tk.NORMAL)
-        self.annotation_output.delete("1.0", tk.END)
-        self.annotation_output.insert(tk.END, dummy_result)
-        self.annotation_output.config(state=tk.DISABLED)
+        self.draw_visual_annotations(query_text)
 
     def visualise_qep(self):
         self.qep_canvas.delete("all")
@@ -129,6 +127,51 @@ class QueryAnnotator:
         canvas.create_rectangle(x - box_width / 2, y - box_height / 2, x + box_width / 2, y + box_height / 2, fill="#a0c4ff", outline="#4a4e69", width=2)
         canvas.create_text(x, y, text=display_text, fill="black", font=("Helvetica", 12, "bold"), justify=tk.CENTER)    
 
+    def draw_visual_annotations(self, query_text):
+        self.annotation_canvas.delete("all")
+        lines = query_text.split("\n")
+        sql_start_x = 20
+        sql_start_y = 30
+        line_height = 80
+
+        line_y_coords = {}
+
+        for i, line in enumerate(lines):
+            y_pos = sql_start_y + (i * line_height)
+            self.annotation_canvas.create_text(sql_start_x, y_pos, text=line, anchor=tk.W, font=("Helvetica", 12))
+            line_y_coords[i] = y_pos
+        
+        annotations = [
+            {
+                "target_line_idx": 0, 
+                "text": "Tables are read using sequential scan.\nThis is because no index is created on the tables."
+            },
+            {
+                "target_line_idx": 1, 
+                "text": "This join is implemented using hash join operator as NL joins and merge join increase the estimated cost by at least 10 and 7 times, respectively."
+            }
+        ]
+
+        box_x_center = 500
+        box_width = 340
+
+        for i, anno in enumerate(annotations):
+            target_line = anno["target_line_idx"]
+            if target_line in line_y_coords:
+                box_y_center = line_y_coords[target_line]
+            else:
+                box_y_center = sql_start_y + (i * 90)
+            box_height = 65 if i == 0 else 85
+
+            self.annotation_canvas.create_rectangle(box_x_center - box_width / 2, box_y_center - box_height / 2, box_x_center + box_width / 2, box_y_center + box_height / 2, fill="#a0c4ff", outline="#4a4e69", width=2)
+            self.annotation_canvas.create_text(box_x_center, box_y_center, text=anno["text"], anchor=tk.CENTER, font=("Helvetica", 12), justify=tk.CENTER, width=box_width - 20)
+
+            if target_line in line_y_coords:
+                start_arrow_x = box_x_center - box_width / 2 - 5
+                start_arrow_y = box_y_center
+                end_arrow_x = sql_start_x + 200
+                end_arrow_y = line_y_coords[target_line]
+                self.annotation_canvas.create_line(start_arrow_x, start_arrow_y, end_arrow_x, end_arrow_y, arrow=tk.LAST, fill="#4a4e69", width=2)
 
 if __name__ == "__main__":
     root = tk.Tk()
