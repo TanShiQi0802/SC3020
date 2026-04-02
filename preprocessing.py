@@ -23,9 +23,9 @@ def get_connection(host,dbname,user,password,port):
     return conn
 
 def get_qep(conn,sql):
-    cur=conn.cursor()
-    cur.execute(f"EXPLAIN (FORMAT JSON, ANALYZE FALSE) {sql}")
-    result=cur.fetchone()[0]
+    with conn.cursor() as cur:
+        cur.execute(f"EXPLAIN (FORMAT JSON, ANALYZE FALSE) {sql}")
+        result=cur.fetchone()[0]
     return result[0]["Plan"]
 
 def get_aqp(conn,sql,disabled_gucs):
@@ -59,12 +59,13 @@ def get_node_types(node):
     Args:
         node (Dictionary): node of the tree derived from get_qep
     """
-    types={node.get("Node Type")}
+    nodetype=node.get("Node Type")
+    types=nodetype if nodetype else set()
     for child in node.get("Plans",[]):
         types|=get_node_types(child)
     return types
         
-def get_all_qeps(conn,sql,root):
+def get_all_aqps(conn,sql,root):
     """get all query execution plans for a given sql command.
 
     Args:
@@ -77,12 +78,11 @@ def get_all_qeps(conn,sql,root):
     """
     node_types=get_node_types(root)
     aqps={}
-    for type in node_types:
-        guc=GUC_MAP.get(type,None)
-        if guc==None: continue
-        
+    for node_type in node_types:
+        guc=GUC_MAP.get(node_type,None)
+        if guc is None: continue
         aqp=get_aqp(conn,sql,[guc])
-        aqps[type]=aqp
+        aqps[node_type]=aqp
     return aqps
 
 
