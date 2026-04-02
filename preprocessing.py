@@ -42,12 +42,12 @@ def get_aqp(conn,sql,disabled_gucs):
 
     with conn.cursor() as cur:
         for guc in disabled_gucs:
-            cur.execute(f"SET {guc} OFF")
+            cur.execute(f"SET {guc} = off")
         
         plan=get_qep(conn,sql)
         
         for guc in disabled_gucs:
-            cur.execute(f"SET {guc} ON")
+            cur.execute(f"SET {guc} = on")
     
     return plan
 
@@ -59,9 +59,9 @@ def get_node_types(node):
     Args:
         node (Dictionary): node of the tree derived from get_qep
     """
-    types=node["Plans"]["Node Type"]
-    for child in node.get("Plans",""):
-        types|=get_node_types(child,types)
+    types={node.get("Node Type")}
+    for child in node.get("Plans",[]):
+        types|=get_node_types(child)
     return types
         
 def get_all_qeps(conn,sql,root):
@@ -81,7 +81,7 @@ def get_all_qeps(conn,sql,root):
         guc=GUC_MAP.get(type,None)
         if guc==None: continue
         
-        aqp=get_qep(conn,sql,root,[guc])
+        aqp=get_aqp(conn,sql,[guc])
         aqps[type]=aqp
     return aqps
 
