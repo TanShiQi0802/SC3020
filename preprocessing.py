@@ -60,7 +60,7 @@ def get_node_types(node):
         node (Dictionary): node of the tree derived from get_qep
     """
     nodetype=node.get("Node Type")
-    types=nodetype if nodetype else set()
+    types={nodetype} if nodetype else set()
     for child in node.get("Plans",[]):
         types|=get_node_types(child)
     return types
@@ -93,4 +93,4 @@ def get_relations(node):
         relations.add(node["Relation Name"])
     for child in node.get("Plans", []):
         relations |= get_relations(child) # set union operation
-    return relations
+    return frozenset(relations)
