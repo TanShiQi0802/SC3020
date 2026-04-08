@@ -1,83 +1,80 @@
-"""
-1. tree cleaning (from NEURON paper): remove "result " nodes
-- initialise new_child sublist
-- go into ['Plans'], check node type for every sublist, if it's "Result" promote its children
-- if not then add to new_child
-- in the end set original node ["Plans"] to new_child
-""" 
+"""Helpers for annotating and normalising PostgreSQL execution plans."""
 
 
-"""
-2. Merge pairs as per neuron paper
+def clean_result_nodes(node):
+    """Remove ``Result`` nodes by promoting their children into ``Plans``.
+
+    The function walks the plan tree recursively. For every child under
+    ``node["Plans"]``:
+    - if the child is a ``Result`` node, its cleaned children are promoted
+      directly into the current node's ``Plans`` list
+    - otherwise, the cleaned child is kept as-is
+
+    Args:
+        node (dict): A PostgreSQL plan node.
+
+    Returns:
+        dict: The same node, updated in place with redundant ``Result`` nodes
+        removed from its subtree.
+    """
+    if not isinstance(node, dict):
+        return node
+
+    new_children = []
+    for child in node.get("Plans", []):
+        cleaned_child = clean_result_nodes(child)
+
+        if cleaned_child.get("Node Type") == "Result":
+            new_children.extend(cleaned_child.get("Plans", []))
+        else:
+            new_children.append(cleaned_child)
+
+    if "Plans" in node:
+        node["Plans"] = new_children
+
+    return node
+
+
+# Tree-normalisation helpers
+
 MERGE_PAIRS = {
-    "Hash Join":        "Hash",
+    "Hash Join": "Hash",
     "Bitmap Heap Scan": "Bitmap Index Scan",
-    "Merge Join":       "Sort",
-    "Aggregate":        "Sort",
-    "Unique":           "Sort",
-}
-- get node type and look up in MERGE_PAIRS
-- check if the node has only one child matching the expected type (indicating redudant node)
-- set this node's children to the duplicate node's children (replace ["Plans"])
-- add attribute ["_merged"]= child type to dict to keep record
-- return node
-"""
-
-"""
-3. Hardcode annotations
-- create dict of operations and their defs and when postgresql prefers it
-
-OPERATOR_DESCRIPTIONS = {
-    "Seq Scan":    "...",
-    "Index Scan":  "...",
-    "Hash Join":   "...",
-    # etc
+    "Merge Join": "Sort",
+    "Aggregate": "Sort",
+    "Unique": "Sort",
 }
 
-OPERATOR_CHOICE_REASONS = {
-    "Seq Scan":    "...",
-    "Hash Join":   "...",
-    # etc
-}
 
-source MOCHA PAPER:
+def merge_plan_pairs(node):
+    """Collapse redundant single-child wrapper nodes defined in ``MERGE_PAIRS``.
 
-Seq Scan → preferred when table is small or most rows are read
-Index Scan → preferred when filter is highly selective
-Hash Join → preferred for large unsorted non-indexed inputs
-Nested Loop → preferred when outer is small and inner is indexed
-Merge Join → preferred when both inputs are already sorted
-Hash Aggregate → preferred when distinct groups fit in memory
-"""
+    For example, if a ``Hash Join`` has a single ``Hash`` child, the ``Hash``
+    node is treated as structural noise and its children are promoted into the
+    parent. The merged child node type is recorded in ``node["_merged"]``.
 
-"""
-4. aqp comparison
-- for every node being annotated in qep, for that node
-- for current qep node compute relation set using get_relations from preprocessing.py (helper)
-- search aqp for a node having the same relation set (if same op type skip)
-- compare cost of qep and aqp
-- hardcode justifications when cost gap is small/large
+    Args:
+        node (dict): A PostgreSQL plan node.
 
-"""
+    Returns:
+        dict: The same node, updated in place with redundant wrapper nodes
+        removed from its subtree.
+    """
+    if not isinstance(node, dict):
+        return node
 
-"""
-5. annotating node
-- take one node and produce annotation
-- look up node type in operator descriptions and return hardcoded explanation
-- why part: look up node type and reason in the dict defined before
-- vs (cost) : write cost justification vs qep
-"""
+    cleaned_children = [merge_plan_pairs(child) for child in node.get("Plans", [])]
+    if "Plans" in node:
+        node["Plans"] = cleaned_children
 
-"""
-6. interface connector
-- given a query generate qep
-- clean tree (1st 2 fns here)
-- traverse tree in postorder (children before parent)
-    - for each node, annotate node(node, aqps), and return operator description, operator choice and comparison with aqps
-"""
+    expected_child_type = MERGE_PAIRS.get(node.get("Node Type"))
+    if not expected_child_type or len(cleaned_children) != 1:
+        return node
 
-"""
-note
+    only_child = cleaned_children[0]
+    if only_child.get("Node Type") != expected_child_type:
+        return node
 
-use helper fns from preprocessing.py (get_relations, get qep, get_aqps,)
-"""
+    node["Plans"] = only_child.get("Plans", [])
+    node["_merged"] = expected_child_type
+    return node
