@@ -1,80 +1,86 @@
-"""Helpers for annotating and normalising PostgreSQL execution plans."""
-
-
-def clean_result_nodes(node):
-    """Remove ``Result`` nodes by promoting their children into ``Plans``.
-
-    The function walks the plan tree recursively. For every child under
-    ``node["Plans"]``:
-    - if the child is a ``Result`` node, its cleaned children are promoted
-      directly into the current node's ``Plans`` list
-    - otherwise, the cleaned child is kept as-is
-
-    Args:
-        node (dict): A PostgreSQL plan node.
-
-    Returns:
-        dict: The same node, updated in place with redundant ``Result`` nodes
-        removed from its subtree.
-    """
-    if not isinstance(node, dict):
-        return node
-
-    new_children = []
-    for child in node.get("Plans", []):
-        cleaned_child = clean_result_nodes(child)
-
-        if cleaned_child.get("Node Type") == "Result":
-            new_children.extend(cleaned_child.get("Plans", []))
-        else:
-            new_children.append(cleaned_child)
-
-    if "Plans" in node:
-        node["Plans"] = new_children
-
-    return node
-
-
-# Tree-normalisation helpers
-
-MERGE_PAIRS = {
-    "Hash Join": "Hash",
-    "Bitmap Heap Scan": "Bitmap Index Scan",
-    "Merge Join": "Sort",
-    "Aggregate": "Sort",
-    "Unique": "Sort",
+OPERATOR_DESCRIPTIONS = {
+    "Seq Scan": "Tables are read using sequential scan from start to finish.",
+    "Index Scan": "Uses an index to find matching rows first, then fetches the corresponding table rows.",
+    "Hash Join": "This join is implemented using the hash join operator.",
+    "Nested Loop": "Combines rows by scanning the inner input repeatedly.",
+    "Merge Join": "Joins two sorted inputs by advancing through them in order."
 }
 
+OPERATOR_CHOICE_REASONS = {
+    "Seq Scan": "This is likely because no index is created on the tables, or reading the whole table is cheaper.",
+    "Hash Join": "NL joins and merge join likely increase the estimated cost significantly.",
+}
 
-def merge_plan_pairs(node):
-    """Collapse redundant single-child wrapper nodes defined in ``MERGE_PAIRS``.
+def extract_plan_cost(plan):
+    if not isinstance(plan, dict):
+        return None
+    return plan.get("Total Cost")
 
-    For example, if a ``Hash Join`` has a single ``Hash`` child, the ``Hash``
-    node is treated as structural noise and its children are promoted into the
-    parent. The merged child node type is recorded in ``node["_merged"]``.
+def compare_aqp_costs(qep, aqps):
+    qep_cost = extract_plan_cost(qep)
+    comparisons = {}
 
-    Args:
-        node (dict): A PostgreSQL plan node.
+    for disabled_operator, aqp in aqps.items():
+        aqp_cost = extract_plan_cost(aqp)
+        if qep_cost is None or aqp_cost is None:
+            continue
+            
+        delta = aqp_cost - qep_cost
+        if delta > 0:
+            comparisons[disabled_operator] = f"Disabling {disabled_operator} increases estimated cost to {aqp_cost:.2f}."
+            
+    return comparisons
 
-    Returns:
-        dict: The same node, updated in place with redundant wrapper nodes
-        removed from its subtree.
-    """
-    if not isinstance(node, dict):
-        return node
+def find_target_line(sql_lines, node):
+    node_type = node.get("Node Type", "")
+    relation = node.get("Relation Name", "")
 
-    cleaned_children = [merge_plan_pairs(child) for child in node.get("Plans", [])]
-    if "Plans" in node:
-        node["Plans"] = cleaned_children
+    if relation:
+        for i, line in enumerate(sql_lines):
+            if relation.lower() in line.lower():
+                return i
+    
+    if "Join" in node_type or "Loop" in node_type:
+        for i, line in enumerate(sql_lines):
+            if "where" in line.lower() or "join" in line.lower():
+                return i
+    return 0
+        
+def generate_annotations(qep, aqp_comparisons, sql_query):
+    sql_lines = sql_query.split("\n")
+    annotations = []
+    
+    def traverse(node):
+        node_type = node.get("Node Type", "")
+        relation = node.get("Relation Name", "")
+        
+        if node_type in OPERATOR_DESCRIPTIONS:
+            desc = OPERATOR_DESCRIPTIONS[node_type]
+            reason = OPERATOR_CHOICE_REASONS.get(node_type, "")
+            comparison = aqp_comparisons.get(node_type, "")
+            
+            full_text = f"{desc}\n{reason}\n{comparison}".strip()
 
-    expected_child_type = MERGE_PAIRS.get(node.get("Node Type"))
-    if not expected_child_type or len(cleaned_children) != 1:
-        return node
+            target_idx = find_target_line(sql_lines, node)
+            
+            annotations.append({
+                "node_type": node_type,
+                "relation": relation,
+                "target_line_idx": target_idx,
+                "text": full_text
+            })
+            
+        for child in node.get("Plans", []):
+            traverse(child)
+            
+    traverse(qep)
 
-    only_child = cleaned_children[0]
-    if only_child.get("Node Type") != expected_child_type:
-        return node
-
-    node["Plans"] = only_child.get("Plans", [])
-    node["_merged"] = expected_child_type
-    return node
+    unique_annotations = []
+    seen = set()
+    for anno in annotations:
+        identifier = (anno["node_type"], anno["target_line_idx"])
+        if identifier not in seen:
+            seen.add(identifier)
+            unique_annotations.append(anno)
+    return unique_annotations
+        
