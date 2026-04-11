@@ -580,7 +580,7 @@ class QueryAnnotator:
         # ── Draw annotation boxes ────────────────────────────────────────────
         box_width = 380
         box_x_start = sql_bg_width + 60
-        current_box_y = sql_start_y + 10
+        current_y_offset = sql_start_y + 10
 
         for anno in generated_annotations:
             category = anno.get("category", "other")
@@ -590,6 +590,8 @@ class QueryAnnotator:
             # Calculate box height based on text length
             estimated_lines = max(1, len(text) // 45 + text.count("\n") + 1)
             box_height = max(60, estimated_lines * 18 + 20)
+
+            current_box_y = current_y_offset + (box_height / 2)
 
             x1 = box_x_start
             y1 = current_box_y - box_height / 2
@@ -669,7 +671,7 @@ class QueryAnnotator:
                     fill=colors["border"], outline=""
                 )
 
-            current_box_y += box_height + 20
+            current_y_offset = y2 + 20
 
         # Update scroll region
         bbox = canvas.bbox("all")
@@ -717,6 +719,15 @@ class QueryAnnotator:
     #  Tab 3: QEP Tree
     # ──────────────────────────────────────────────────────────────────────────
 
+    def _calculate_tree_width(self, node):
+        children = node.get("Plans", [])
+        if not children:
+            node["_tree_width"] = 180
+        else:
+            for child in children:
+                self._calculate_tree_width(child)
+            node["_tree_width"] = sum(c["_tree_width"] for c in children) + (len((children)) - 1) * 40
+
     def _draw_qep_tree(self):
         """Draw the QEP as a color-coded tree."""
         if not self.current_qep:
@@ -727,17 +738,19 @@ class QueryAnnotator:
         self.tooltips = []
 
         self.root.update_idletasks()
+        self._calculate_tree_width(self.current_qep)
+        total_tree_width = self.current_qep["_tree_width"]
         canvas_width = canvas.winfo_width()
-        start_x = canvas_width / 2 if canvas_width > 100 else 500
+        start_x = max(canvas_width / 2, (total_tree_width / 2) + 50)
 
-        self._draw_qep_node(canvas, self.current_qep, start_x, 50, 200)
+        self._draw_qep_node(canvas, self.current_qep, start_x, 50)
 
         bbox = canvas.bbox("all")
         if bbox:
             canvas.config(scrollregion=(bbox[0] - 60, bbox[1] - 60,
                                         bbox[2] + 60, bbox[3] + 60))
 
-    def _draw_qep_node(self, canvas, node, x, y, x_offset):
+    def _draw_qep_node(self, canvas, node, x, y):
         """Recursively draw a single QEP node and its children."""
         node_type = node.get("Node Type", "Unknown")
         relation_name = node.get("Relation Name")
@@ -764,24 +777,22 @@ class QueryAnnotator:
         children = node.get("Plans", [])
         child_y = y + 85
 
-        if len(children) == 1:
-            child_positions = [x]
-        elif len(children) == 2:
-            child_positions = [x - x_offset, x + x_offset]
-        else:
-            total_width = (len(children) - 1) * x_offset
-            start = x - total_width / 2
-            child_positions = [start + i * x_offset for i in range(len(children))]
+        if children:
+            total_children_width = sum(c["_tree_width"] for c in children) + (len((children)) - 1) * 40
+            current_children_x = x - total_children_width / 2
 
-        for i, child in enumerate(children):
-            child_x = child_positions[i]
-            # Draw connection line
-            canvas.create_line(
-                x, y + box_height / 2, child_x, child_y - box_height / 2,
-                fill=COLORS["border"], width=2
-            )
-            next_offset = max(100, x_offset / 1.6)
-            self._draw_qep_node(canvas, child, child_x, child_y, next_offset)
+            for child in children:
+                child_x = current_children_x + child["_tree_width"] / 2
+                child_box_height = 52 if child.get("Relation Name") else 36
+                canvas.create_line(
+                    x,y + box_height / 2,
+                    child_x,child_y - child_box_height / 2,
+                    fill=COLORS["border"], width=2
+                )
+
+                self._draw_qep_node(canvas, child, child_x, child_y)
+                current_children_x += child["_tree_width"] + 40
+
 
         # Draw the node box
         box_width = 140
