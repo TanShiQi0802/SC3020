@@ -3,10 +3,7 @@ from tkinter import ttk, messagebox, font as tkfont
 import time
 import preprocessing
 import annotation
-
-# ═══════════════════════════════════════════════════════════════════════════════
-#  Theme constants
-# ═══════════════════════════════════════════════════════════════════════════════
+import re
 
 COLORS = {
     "bg_dark":       "#0f0f1a",
@@ -31,7 +28,6 @@ COLORS = {
 FONT_FAMILY = "Helvetica"
 FONT_MONO = "Courier"
 
-# SQL keyword color map for syntax highlighting
 SQL_KEYWORDS = {
     "SELECT": "#c084fc", "FROM": "#c084fc", "WHERE": "#c084fc",
     "JOIN": "#c084fc", "INNER": "#c084fc", "LEFT": "#c084fc",
@@ -49,18 +45,11 @@ SQL_KEYWORDS = {
     "VALUES": "#c084fc", "SET": "#c084fc", "DESC": "#c084fc",
     "ASC": "#c084fc", "CASE": "#c084fc", "WHEN": "#c084fc",
     "THEN": "#c084fc", "ELSE": "#c084fc", "END": "#c084fc",
-    # Aggregate functions
     "SUM": "#fbbf24", "COUNT": "#fbbf24", "AVG": "#fbbf24",
     "MIN": "#fbbf24", "MAX": "#fbbf24",
 }
 
-
-# ═══════════════════════════════════════════════════════════════════════════════
-#  Tooltip helper
-# ═══════════════════════════════════════════════════════════════════════════════
-
 class ToolTip:
-    """Hover tooltip for canvas items."""
     def __init__(self, canvas, item_id, text):
         self.canvas = canvas
         self.item_id = item_id
@@ -90,11 +79,6 @@ class ToolTip:
             self.tip_window.destroy()
             self.tip_window = None
 
-
-# ═══════════════════════════════════════════════════════════════════════════════
-#  Main application class
-# ═══════════════════════════════════════════════════════════════════════════════
-
 class QueryAnnotator:
     def __init__(self, root):
         self.root = root
@@ -110,7 +94,6 @@ class QueryAnnotator:
         self.conn = None
         self.tooltips = []
 
-        # Try to maximize
         try:
             self.root.state("zoomed")
         except Exception:
@@ -122,24 +105,17 @@ class QueryAnnotator:
         self._configure_styles()
         self._create_widgets()
 
-    # ──────────────────────────────────────────────────────────────────────────
-    #  Theme / style configuration
-    # ──────────────────────────────────────────────────────────────────────────
-
     def _configure_styles(self):
         style = ttk.Style()
         style.theme_use("clam")
 
-        # General
         style.configure(".", background=COLORS["bg_dark"], foreground=COLORS["text_primary"],
                         fieldbackground=COLORS["bg_input"], font=(FONT_FAMILY, 11))
 
-        # Frames
         style.configure("Dark.TFrame", background=COLORS["bg_dark"])
         style.configure("Surface.TFrame", background=COLORS["bg_surface"])
         style.configure("Card.TFrame", background=COLORS["bg_card"])
 
-        # Labels
         style.configure("Dark.TLabel", background=COLORS["bg_dark"], foreground=COLORS["text_primary"],
                         font=(FONT_FAMILY, 11))
         style.configure("Surface.TLabel", background=COLORS["bg_surface"], foreground=COLORS["text_primary"],
@@ -155,7 +131,6 @@ class QueryAnnotator:
         style.configure("StatusRed.TLabel", background=COLORS["bg_surface"],
                         foreground=COLORS["red"], font=(FONT_FAMILY, 10))
 
-        # Entries
         style.configure("Dark.TEntry", fieldbackground=COLORS["bg_input"],
                         foreground=COLORS["text_primary"], insertcolor=COLORS["text_primary"],
                         borderwidth=1, relief="solid")
@@ -163,7 +138,6 @@ class QueryAnnotator:
                   fieldbackground=[("focus", COLORS["bg_input"])],
                   bordercolor=[("focus", COLORS["border_focus"])])
 
-        # Buttons
         style.configure("Accent.TButton", background=COLORS["accent"],
                         foreground="white", font=(FONT_FAMILY, 11, "bold"),
                         padding=(16, 8), borderwidth=0)
@@ -177,7 +151,6 @@ class QueryAnnotator:
         style.map("Secondary.TButton",
                   background=[("active", COLORS["bg_hover"])])
 
-        # Notebook (tabs)
         style.configure("Dark.TNotebook", background=COLORS["bg_dark"],
                         borderwidth=0, tabmargins=[0, 0, 0, 0])
         style.configure("Dark.TNotebook.Tab", background=COLORS["bg_surface"],
@@ -187,10 +160,8 @@ class QueryAnnotator:
                   background=[("selected", COLORS["bg_card"])],
                   foreground=[("selected", COLORS["accent_light"])])
 
-        # PanedWindow
         style.configure("Dark.TPanedwindow", background=COLORS["bg_dark"])
 
-        # Scrollbar
         style.configure("Dark.Vertical.TScrollbar", background=COLORS["bg_surface"],
                         troughcolor=COLORS["bg_dark"], arrowcolor=COLORS["text_muted"],
                         borderwidth=0)
@@ -198,19 +169,13 @@ class QueryAnnotator:
                         troughcolor=COLORS["bg_dark"], arrowcolor=COLORS["text_muted"],
                         borderwidth=0)
 
-    # ──────────────────────────────────────────────────────────────────────────
-    #  Widget creation
-    # ──────────────────────────────────────────────────────────────────────────
-
     def _create_widgets(self):
-        # ── Title bar ────────────────────────────────────────────────────────
         title_frame = ttk.Frame(self.root, style="Dark.TFrame")
         title_frame.pack(fill=tk.X, padx=20, pady=(15, 5))
         ttk.Label(title_frame, text="⚡ Query Plan Annotator", style="Title.TLabel").pack(side=tk.LEFT)
         ttk.Label(title_frame, text="SC3020 Database System Principles",
                   style="Status.TLabel").pack(side=tk.RIGHT)
 
-        # ── Connection bar ───────────────────────────────────────────────────
         conn_frame = ttk.Frame(self.root, style="Surface.TFrame")
         conn_frame.pack(fill=tk.X, padx=20, pady=(5, 10))
 
@@ -241,17 +206,14 @@ class QueryAnnotator:
         self.conn_status_label = ttk.Label(conn_inner, text="● Disconnected", style="StatusRed.TLabel")
         self.conn_status_label.pack(side=tk.LEFT, padx=(10, 0))
 
-        # ── Main split: left (query input) | right (output tabs) ────────────
         main_pane = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL, style="Dark.TPanedwindow")
         main_pane.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 5))
 
-        # Left panel — SQL input
         left_frame = ttk.Frame(main_pane, style="Dark.TFrame")
         main_pane.add(left_frame, weight=1)
 
         ttk.Label(left_frame, text="SQL Query", style="SectionTitle.TLabel").pack(anchor=tk.W, pady=(0, 5))
 
-        # SQL text widget with dark theme
         sql_frame = tk.Frame(left_frame, bg=COLORS["border"], bd=1, relief=tk.FLAT)
         sql_frame.pack(fill=tk.BOTH, expand=True)
 
@@ -273,10 +235,8 @@ class QueryAnnotator:
         sql_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.query_input.pack(fill=tk.BOTH, expand=True)
 
-        # Bind syntax highlighting
         self.query_input.bind("<KeyRelease>", self._highlight_sql)
 
-        # Buttons
         btn_frame = ttk.Frame(left_frame, style="Dark.TFrame")
         btn_frame.pack(fill=tk.X, pady=(10, 0))
 
@@ -288,29 +248,24 @@ class QueryAnnotator:
                                     command=lambda: self.query_input.delete("1.0", tk.END))
         self.clear_btn.pack(side=tk.LEFT, padx=(10, 0))
 
-        # Right panel — Tabbed output
         right_frame = ttk.Frame(main_pane, style="Dark.TFrame")
         main_pane.add(right_frame, weight=2)
 
         self.notebook = ttk.Notebook(right_frame, style="Dark.TNotebook")
         self.notebook.pack(fill=tk.BOTH, expand=True)
 
-        # Tab 1: Annotated SQL (Visual)
         tab1 = ttk.Frame(self.notebook, style="Dark.TFrame")
         self.notebook.add(tab1, text="  Annotated SQL  ")
         self._create_annotation_canvas(tab1)
 
-        # Tab 2: Annotated SQL (Text)
         tab2 = ttk.Frame(self.notebook, style="Dark.TFrame")
         self.notebook.add(tab2, text="  SQL with Comments  ")
         self._create_text_tab(tab2)
 
-        # Tab 3: QEP Tree
         tab3 = ttk.Frame(self.notebook, style="Dark.TFrame")
         self.notebook.add(tab3, text="  QEP Tree  ")
         self._create_qep_canvas(tab3)
 
-        # ── Status bar ───────────────────────────────────────────────────────
         status_frame = ttk.Frame(self.root, style="Surface.TFrame")
         status_frame.pack(fill=tk.X, padx=20, pady=(5, 15))
 
@@ -321,12 +276,7 @@ class QueryAnnotator:
         self.annotation_count_label = ttk.Label(status_frame, text="", style="Status.TLabel")
         self.annotation_count_label.pack(side=tk.RIGHT, padx=10, pady=5)
 
-    # ──────────────────────────────────────────────────────────────────────────
-    #  Create sub-panels
-    # ──────────────────────────────────────────────────────────────────────────
-
     def _create_annotation_canvas(self, parent):
-        """Tab 1: visual annotated SQL with arrows."""
         canvas_frame = tk.Frame(parent, bg=COLORS["bg_dark"])
         canvas_frame.pack(fill=tk.BOTH, expand=True)
 
@@ -347,7 +297,6 @@ class QueryAnnotator:
         canvas_frame.grid_columnconfigure(0, weight=1)
 
     def _create_text_tab(self, parent):
-        """Tab 2: annotated SQL as plain text with inline comments."""
         toolbar = ttk.Frame(parent, style="Dark.TFrame")
         toolbar.pack(fill=tk.X, pady=(5, 0), padx=5)
 
@@ -374,7 +323,6 @@ class QueryAnnotator:
         self.annotated_text.pack(fill=tk.BOTH, expand=True)
 
     def _create_qep_canvas(self, parent):
-        """Tab 3: QEP tree visualisation."""
         canvas_frame = tk.Frame(parent, bg=COLORS["bg_dark"])
         canvas_frame.pack(fill=tk.BOTH, expand=True)
 
@@ -394,12 +342,7 @@ class QueryAnnotator:
         canvas_frame.grid_rowconfigure(0, weight=1)
         canvas_frame.grid_columnconfigure(0, weight=1)
 
-    # ──────────────────────────────────────────────────────────────────────────
-    #  Syntax highlighting
-    # ──────────────────────────────────────────────────────────────────────────
-
     def _highlight_sql(self, event=None):
-        """Apply basic keyword coloring to the SQL input."""
         self.query_input.tag_remove("keyword", "1.0", tk.END)
         self.query_input.tag_remove("function", "1.0", tk.END)
         self.query_input.tag_remove("string", "1.0", tk.END)
@@ -412,21 +355,16 @@ class QueryAnnotator:
 
         content = self.query_input.get("1.0", tk.END)
 
-        import re
-
-        # Highlight strings
         for match in re.finditer(r"'[^']*'", content):
             start_idx = f"1.0 + {match.start()} chars"
             end_idx = f"1.0 + {match.end()} chars"
             self.query_input.tag_add("string", start_idx, end_idx)
 
-        # Highlight numbers
         for match in re.finditer(r'\b\d+\.?\d*\b', content):
             start_idx = f"1.0 + {match.start()} chars"
             end_idx = f"1.0 + {match.end()} chars"
             self.query_input.tag_add("number", start_idx, end_idx)
 
-        # Highlight keywords
         for word, color in SQL_KEYWORDS.items():
             pattern = r'\b' + word + r'\b'
             tag_name = "function" if color == "#fbbf24" else "keyword"
@@ -435,12 +373,7 @@ class QueryAnnotator:
                 end_idx = f"1.0 + {match.end()} chars"
                 self.query_input.tag_add(tag_name, start_idx, end_idx)
 
-    # ──────────────────────────────────────────────────────────────────────────
-    #  Connection handling
-    # ──────────────────────────────────────────────────────────────────────────
-
     def _connect(self):
-        """Establish a database connection."""
         try:
             if self.conn:
                 try:
@@ -461,10 +394,6 @@ class QueryAnnotator:
             self.conn_status_label.configure(text="● Disconnected", style="StatusRed.TLabel")
             messagebox.showerror("Connection Error", f"Failed to connect:\n{str(e)}")
 
-    # ──────────────────────────────────────────────────────────────────────────
-    #  Core algorithm execution
-    # ──────────────────────────────────────────────────────────────────────────
-
     def run_algorithm(self):
         query_text = self.query_input.get("1.0", tk.END).strip()
         if not query_text:
@@ -477,41 +406,32 @@ class QueryAnnotator:
         start_time = time.time()
 
         try:
-            # Auto-connect if not connected
             if not self.conn:
                 self._connect()
             if not self.conn:
                 return
-
-            # 1. Get QEP
+            
             qep = preprocessing.get_qep(self.conn, query_text)
             self.current_qep = qep
 
-            # 2. Get all AQPs
             aqps = preprocessing.get_all_aqps(self.conn, query_text, qep)
 
-            # 3. Compare costs
             aqp_comparisons = annotation.compare_aqp_costs(qep, aqps)
 
-            # 4. Generate annotations
             generated_annotations = annotation.generate_annotations(qep, aqp_comparisons, query_text)
 
-            # 5. Generate annotated SQL text
             annotated_sql = annotation.generate_annotated_sql(query_text, generated_annotations)
 
-            # Store results
             self.last_query = query_text
             self.last_annotations = generated_annotations
             self.last_annotated_sql = annotated_sql
 
             elapsed = time.time() - start_time
 
-            # Update all three tabs
             self._draw_visual_annotations(query_text, generated_annotations)
             self._update_text_tab(annotated_sql)
             self._draw_qep_tree()
 
-            # Update status
             self.status_label.configure(
                 text=f"Done in {elapsed:.2f}s — QEP cost: {qep.get('Total Cost', 0):.2f}"
             )
@@ -523,12 +443,7 @@ class QueryAnnotator:
             self.status_label.configure(text=f"Error: {str(e)}")
             messagebox.showerror("Execution Error", f"Failed to execute:\n{str(e)}")
 
-    # ──────────────────────────────────────────────────────────────────────────
-    #  Tab 1: Visual Annotated SQL
-    # ──────────────────────────────────────────────────────────────────────────
-
     def _draw_visual_annotations(self, query_text, generated_annotations):
-        """Draw the SQL query with annotation boxes and arrows on the canvas."""
         if not query_text:
             return
 
@@ -547,8 +462,6 @@ class QueryAnnotator:
         line_height = 32
         char_width = 9
 
-        # ── Draw SQL lines ───────────────────────────────────────────────────
-        # Background for SQL area
         max_line_len = max(len(line) for line in lines) if lines else 0
         sql_bg_width = max(sql_start_x + max_line_len * char_width + 40, 400)
         sql_bg_height = sql_start_y + len(lines) * line_height + 20
@@ -565,19 +478,16 @@ class QueryAnnotator:
         line_y_coords = {}
         for i, line in enumerate(lines):
             y_pos = sql_start_y + (i * line_height)
-            # Line number
             canvas.create_text(
                 sql_start_x - 10, y_pos, text=str(i + 1), anchor=tk.E,
                 font=(FONT_MONO, 10), fill=COLORS["text_muted"]
             )
-            # SQL text
             canvas.create_text(
                 sql_start_x, y_pos, text=line, anchor=tk.W,
                 font=(FONT_MONO, 11), fill=COLORS["text_primary"]
             )
             line_y_coords[i] = y_pos
 
-        # ── Draw annotation boxes ────────────────────────────────────────────
         box_width = 380
         box_x_start = sql_bg_width + 60
         current_y_offset = sql_start_y + 10
@@ -587,7 +497,6 @@ class QueryAnnotator:
             colors = annotation.CATEGORY_COLORS.get(category, annotation.CATEGORY_COLORS["other"])
 
             text = anno["text"]
-            # Calculate box height based on text length
             estimated_lines = max(1, len(text) // 45 + text.count("\n") + 1)
             box_height = max(60, estimated_lines * 18 + 20)
 
@@ -598,13 +507,11 @@ class QueryAnnotator:
             x2 = box_x_start + box_width
             y2 = current_box_y + box_height / 2
 
-            # Box background
             box_id = canvas.create_rectangle(
                 x1, y1, x2, y2,
                 fill=colors["bg"], outline=colors["border"], width=2
             )
 
-            # Node type label (header)
             node_label = anno["node_type"]
             if anno["relation"]:
                 node_label += f"  ({anno['relation']})"
@@ -613,29 +520,24 @@ class QueryAnnotator:
                 font=(FONT_FAMILY, 10, "bold"), fill=colors["fg"]
             )
 
-            # ── Separator line ───────────────────────────────────────────────
             sep_y = y1 + 28
             canvas.create_line(x1 + 8, sep_y, x2 - 8, sep_y,
                                fill=colors["border"], width=1, dash=(2, 2))
 
-            # Annotation text (body)
             text_id = canvas.create_text(
                 x1 + 12, sep_y + 6, text=text, anchor=tk.NW,
                 font=(FONT_FAMILY, 9), fill=colors["fg"],
                 width=box_width - 24, justify=tk.LEFT
             )
 
-            # Tooltip with full details
             ToolTip(canvas, box_id, f"[{anno['node_type']}]\n{text}")
 
-            # ── Arrow to SQL line ────────────────────────────────────────────
             target_line = anno.get("target_line_idx", 0)
             if target_line in line_y_coords:
                 arrow_start_x = x1
                 arrow_start_y = current_box_y
                 arrow_end_y = line_y_coords[target_line]
 
-                # Find target x position
                 line_str = lines[target_line].lower()
                 relation = anno.get("relation", "").lower()
                 keyword = relation if relation else ""
@@ -653,7 +555,6 @@ class QueryAnnotator:
 
                 arrow_end_x = min(arrow_end_x, arrow_start_x - 15)
 
-                # Draw curved arrow with a bezier-like path
                 mid_x = (arrow_start_x + arrow_end_x) / 2
                 canvas.create_line(
                     arrow_start_x, arrow_start_y,
@@ -664,7 +565,6 @@ class QueryAnnotator:
                     fill=colors["border"], width=2
                 )
 
-                # Small dot at the arrow target
                 canvas.create_oval(
                     arrow_end_x - 4, arrow_end_y - 4,
                     arrow_end_x + 4, arrow_end_y + 4,
@@ -673,28 +573,20 @@ class QueryAnnotator:
 
             current_y_offset = y2 + 20
 
-        # Update scroll region
         bbox = canvas.bbox("all")
         if bbox:
             canvas.config(scrollregion=(bbox[0] - 20, bbox[1] - 20,
                                         bbox[2] + 40, bbox[3] + 40))
 
-    # ──────────────────────────────────────────────────────────────────────────
-    #  Tab 2: Annotated SQL text
-    # ──────────────────────────────────────────────────────────────────────────
-
     def _update_text_tab(self, annotated_sql):
-        """Display the annotated SQL text with inline comments."""
         self.annotated_text.configure(state=tk.NORMAL)
         self.annotated_text.delete("1.0", tk.END)
 
-        # Configure tags for coloring comments
         self.annotated_text.tag_configure("comment", foreground=COLORS["green"])
         self.annotated_text.tag_configure("sql", foreground=COLORS["text_primary"])
 
         for line in annotated_sql.split("\n"):
             if "/*" in line and "*/" in line:
-                # Split into SQL part and comment part
                 parts = line.split("/*", 1)
                 sql_part = parts[0]
                 comment_part = "/*" + parts[1]
@@ -707,17 +599,12 @@ class QueryAnnotator:
         self.annotated_text.configure(state=tk.DISABLED)
 
     def _copy_annotated_sql(self):
-        """Copy the annotated SQL to the system clipboard."""
         if self.last_annotated_sql:
             self.root.clipboard_clear()
             self.root.clipboard_append(self.last_annotated_sql)
             self.status_label.configure(text="Annotated SQL copied to clipboard!")
         else:
             self.status_label.configure(text="No annotated SQL to copy")
-
-    # ──────────────────────────────────────────────────────────────────────────
-    #  Tab 3: QEP Tree
-    # ──────────────────────────────────────────────────────────────────────────
 
     def _calculate_tree_width(self, node):
         children = node.get("Plans", [])
@@ -729,7 +616,6 @@ class QueryAnnotator:
             node["_tree_width"] = sum(c["_tree_width"] for c in children) + (len((children)) - 1) * 40
 
     def _draw_qep_tree(self):
-        """Draw the QEP as a color-coded tree."""
         if not self.current_qep:
             return
 
@@ -751,7 +637,6 @@ class QueryAnnotator:
                                         bbox[2] + 60, bbox[3] + 60))
 
     def _draw_qep_node(self, canvas, node, x, y):
-        """Recursively draw a single QEP node and its children."""
         node_type = node.get("Node Type", "Unknown")
         relation_name = node.get("Relation Name")
         total_cost = node.get("Total Cost", 0)
@@ -759,7 +644,6 @@ class QueryAnnotator:
         plan_width = node.get("Plan Width", 0)
         startup_cost = node.get("Startup Cost", 0)
 
-        # Build display text
         if relation_name:
             display_text = f"{node_type}\n({relation_name})"
             box_height = 52
@@ -769,11 +653,9 @@ class QueryAnnotator:
 
         cost_text = f"Cost: {total_cost:.1f}"
 
-        # Get category colors
         category = annotation.NODE_CATEGORIES.get(node_type, "other")
         colors = annotation.CATEGORY_COLORS.get(category, annotation.CATEGORY_COLORS["other"])
 
-        # Draw children first (so lines are behind nodes)
         children = node.get("Plans", [])
         child_y = y + 85
 
@@ -793,37 +675,30 @@ class QueryAnnotator:
                 self._draw_qep_node(canvas, child, child_x, child_y)
                 current_children_x += child["_tree_width"] + 40
 
-
-        # Draw the node box
         box_width = 140
         x1, y1 = x - box_width / 2, y - box_height / 2
         x2, y2 = x + box_width / 2, y + box_height / 2
 
-        # Shadow
         canvas.create_rectangle(
             x1 + 3, y1 + 3, x2 + 3, y2 + 3,
             fill="#0a0a16", outline=""
         )
 
-        # Main box
         box_id = canvas.create_rectangle(
             x1, y1, x2, y2,
             fill=colors["bg"], outline=colors["border"], width=2
         )
 
-        # Node text
         canvas.create_text(
             x, y - 4, text=display_text,
             fill=colors["fg"], font=(FONT_FAMILY, 10, "bold"), justify=tk.CENTER
         )
 
-        # Cost label below box
         canvas.create_text(
             x, y2 + 10, text=cost_text,
             fill=COLORS["text_muted"], font=(FONT_FAMILY, 8)
         )
 
-        # Tooltip
         tooltip_text = (
             f"Node Type: {node_type}\n"
             f"Startup Cost: {startup_cost:.2f}\n"
