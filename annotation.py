@@ -129,7 +129,10 @@ def compare_aqp_costs(qep, aqps):
         if delta <= 0:
             continue
 
-        multiplier = aqp_cost / qep_cost if qep_cost > 0 else float("inf")
+        if qep_cost > 0:
+            multiplier = aqp_cost / qep_cost
+        else:
+            multiplier = float("inf")
 
         if replacement_ops:
             alt_names = ", ".join(sorted(replacement_ops))
@@ -208,7 +211,15 @@ def generate_annotations(qep, aqp_comparisons, sql_query):
         else:
             comparison = comp_data
 
-        parts = [p for p in [desc, reason, comparison] if p]
+        parts = []
+
+        if desc:
+            parts.append(desc)
+        if reason:
+            parts.append(reason)
+        if comparison:
+            parts.append(comparison)
+
         full_text = "\n".join(parts)
 
         target_idx = find_target_line(sql_lines, node)

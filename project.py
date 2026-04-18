@@ -7,6 +7,7 @@ if __name__ == "__main__":
     try:
         root.tk.call("tk", "scaling", 1.25)
     except Exception:
+        print("Warning: DPI scaling not supported on this OS")
         pass
 
     app = QueryAnnotator(root)

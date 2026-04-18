@@ -28,26 +28,18 @@ COLORS = {
 FONT_FAMILY = "Helvetica"
 FONT_MONO = "Courier"
 
-SQL_KEYWORDS = {
-    "SELECT": "#c084fc", "FROM": "#c084fc", "WHERE": "#c084fc",
-    "JOIN": "#c084fc", "INNER": "#c084fc", "LEFT": "#c084fc",
-    "RIGHT": "#c084fc", "OUTER": "#c084fc", "CROSS": "#c084fc",
-    "ON": "#c084fc", "AND": "#c084fc", "OR": "#c084fc",
-    "GROUP": "#c084fc", "BY": "#c084fc", "ORDER": "#c084fc",
-    "HAVING": "#c084fc", "LIMIT": "#c084fc", "OFFSET": "#c084fc",
-    "AS": "#c084fc", "IN": "#c084fc", "NOT": "#c084fc",
-    "NULL": "#c084fc", "IS": "#c084fc", "LIKE": "#c084fc",
-    "BETWEEN": "#c084fc", "EXISTS": "#c084fc", "DISTINCT": "#c084fc",
-    "UNION": "#c084fc", "INTERSECT": "#c084fc", "EXCEPT": "#c084fc",
-    "INSERT": "#c084fc", "UPDATE": "#c084fc", "DELETE": "#c084fc",
-    "CREATE": "#c084fc", "DROP": "#c084fc", "ALTER": "#c084fc",
-    "WITH": "#c084fc", "FETCH": "#c084fc", "INTO": "#c084fc",
-    "VALUES": "#c084fc", "SET": "#c084fc", "DESC": "#c084fc",
-    "ASC": "#c084fc", "CASE": "#c084fc", "WHEN": "#c084fc",
-    "THEN": "#c084fc", "ELSE": "#c084fc", "END": "#c084fc",
-    "SUM": "#fbbf24", "COUNT": "#fbbf24", "AVG": "#fbbf24",
-    "MIN": "#fbbf24", "MAX": "#fbbf24",
-}
+PURPLE_KWS = [
+    "SELECT", "FROM", "WHERE", "JOIN", "INNER", "LEFT", "RIGHT", "OUTER", 
+    "CROSS", "ON", "AND", "OR", "GROUP", "BY", "ORDER", "HAVING", "LIMIT", 
+    "OFFSET", "AS", "IN", "NOT", "NULL", "IS", "LIKE", "BETWEEN", "EXISTS", 
+    "DISTINCT", "UNION", "INTERSECT", "EXCEPT", "INSERT", "UPDATE", "DELETE", 
+    "CREATE", "DROP", "ALTER", "WITH", "FETCH", "INTO", "VALUES", "SET", 
+    "DESC", "ASC", "CASE", "WHEN", "THEN", "ELSE", "END"
+]
+YELLOW_KWS = ["SUM", "COUNT", "AVG", "MIN", "MAX"]
+
+SQL_KEYWORDS = {kw: "#c084fc" for kw in PURPLE_KWS}
+SQL_KEYWORDS.update({kw: "#fbbf24" for kw in YELLOW_KWS})
 
 class ToolTip:
     def __init__(self, canvas, item_id, text):
@@ -392,6 +384,7 @@ class QueryAnnotator:
             self.status_label.configure(text=f"Connected to {self.db_entry.get()}")
         except Exception as e:
             self.conn_status_label.configure(text="● Disconnected", style="StatusRed.TLabel")
+            print("Execution failed:", e)
             messagebox.showerror("Connection Error", f"Failed to connect:\n{str(e)}")
 
     def run_algorithm(self):
